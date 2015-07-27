@@ -1,0 +1,73 @@
+#!/usr/bin/env python
+# For copyright and license terms, see COPYRIGHT.rst (top level of repository)
+# Repository: https://github.com/C3S/c3s.ado
+'''Monitor container'''
+from __future__ import print_function
+
+import os
+import subprocess
+
+
+PREFIX = os.path.basename(os.path.split(os.path.realpath(__file__))[0])
+for char in ('_', '-', '.'):
+    PREFIX = PREFIX.replace(char, "")
+PREFIX = PREFIX + '_'
+
+
+def clean(x):
+    return x.strip().split(' ')
+
+
+def sizeof_fmt(num, suffix='B'):
+    num = int(num)
+    for unit in ['  ', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f%s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f%s%s" % (num, 'Yi', suffix)
+
+
+CONTAINERS = subprocess.check_output(
+    'docker-compose ps -q', shell=True).split('\n')
+CONTAINER_NAMES = subprocess.check_output(
+    'docker-compose ps', shell=True).split('\n')
+CONTAINER_NAMES = [
+    clean(x).pop(0).replace(PREFIX, '') for x in CONTAINER_NAMES[2:]]
+
+print('                         cpu            memory')
+print('    container      user     system     cache+rss')
+print('------------------------------------------------')
+for index, container_id in enumerate(CONTAINERS):
+    if not container_id:
+        continue
+    name = CONTAINER_NAMES[index]
+    cpu_file = (
+        '/sys/fs/cgroup/cpu/system.slice/docker-%s.scope/cpuacct.stat' %
+        (container_id))
+    memory_file = (
+        '/sys/fs/cgroup/memory/system.slice/docker-%s.scope/memory.stat' %
+        (container_id))
+    with open(cpu_file, 'r') as f:
+        data = f.read().split('\n')
+        cpu_user = data[0].replace('user ', '')
+        cpu_system = data[1].replace('system ', '')
+    with open(memory_file, 'r') as f:
+        data = f.read().split('\n')
+        total_mem = 0
+        swap_mem = 0
+        for line in data:
+            if line.startswith('rss_huge'):
+                continue
+
+            if line.startswith('cache'):
+                total_mem += int(line.replace('cache ', '').strip())
+            if line.startswith('rss'):
+                total_mem += int(line.replace('rss ', '').strip())
+
+        total_mem = sizeof_fmt(total_mem)
+
+    print(
+        '{name:>13}{cpu_user:>10}{cpu_system:>11}{total_mem:>14}'
+        ''.format(
+            name=name, cpu_user=cpu_user, cpu_system=cpu_system,
+            total_mem=total_mem))

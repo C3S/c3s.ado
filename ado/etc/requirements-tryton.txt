@@ -1,0 +1,15 @@
+--no-index
+
+-e src/trytond
+-e src/country
+-e src/currency
+-e src/party
+-e src/company
+-e src/product
+-e src/account
+-e src/account_product
+-e src/account_invoice
+-e src/account_invoice_line_standalone
+-e src/bank
+-e src/web_user
+-e src/collecting_society

@@ -1,0 +1,34 @@
+#!/usr/bin/env python
+# For copyright and license terms, see COPYRIGHT.rst (top level of repository)
+# Repository: https://github.com/C3S/c3s.ado
+'''Shows name and external url of all running containers'''
+import os
+import subprocess
+
+
+real_path = os.path.realpath(__file__)
+directory = os.path.dirname(real_path)
+os.chdir(directory)
+
+PREFIX = os.path.basename(os.path.split(real_path)[0])
+for char in ('_', '-', '.'):
+    PREFIX = PREFIX.replace(char, "")
+PREFIX = PREFIX + '_'
+CONTAINERS = subprocess.check_output(
+    'docker-compose ps', shell=True).split('\n')
+
+
+def clean(x):
+    return x.strip().split(' ')
+
+
+for name, url in [(clean(x).pop(0), clean(x).pop()) for x in CONTAINERS[2:]]:
+    name = name.replace(PREFIX, '')
+    if not url:
+        continue
+    external_port = None
+    internal_port = url
+    if url.find('->') > -1:
+        external_port, internal_port = url.split('->')
+    if external_port:
+        print('%s %s' % (name, external_port))

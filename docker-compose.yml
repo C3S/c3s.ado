@@ -1,0 +1,54 @@
+# For copyright and license terms, see COPYRIGHT.rst (top level of repository)
+# Repository: https://github.com/C3S/c3s.ado
+
+db:
+  image: postgres:9.4
+  volumes:
+    - ./postgresql-data:/var/lib/postgresql/data
+
+tryton:
+  build: Dockerfiles/tryton
+  command: ado-do deploy-tryton c3s
+  volumes:
+    - ./ado:/ado
+  ports:
+    - "8000:8000"
+  links:
+    - db
+
+portal:
+  build: Dockerfiles/portal
+  command: ado-do deploy-portal
+  volumes:
+    - ./ado:/ado
+  ports:
+    - "6543"
+  links:
+    - db
+    - proxy
+  environment:
+    PYRAMID_SERVICE: 'portal'
+  env_file:
+    - ./portal.env
+
+api:
+  build: Dockerfiles/portal
+  command: ado-do deploy-api
+  volumes:
+    - ./ado:/ado
+  ports:
+    - "6543"
+  links:
+    - db
+    - proxy
+  environment:
+    PYRAMID_SERVICE: 'api'
+  env_file:
+    - ./api.env
+
+proxy:
+  image: jwilder/nginx-proxy
+  volumes:
+    - /var/run/docker.sock:/tmp/docker.sock
+  ports:
+    - "81:80"

@@ -1,0 +1,237 @@
+#!/usr/bin/env python
+# For copyright and license terms, see COPYRIGHT.rst (top level of repository)
+# Repository: https://github.com/C3S/c3s.ado
+'''Collects several tools for maintaining *ado* in a docker container.'''
+from __future__ import print_function
+import os
+import time
+import subprocess
+from urlparse import urlparse
+
+import pip
+import click
+
+PROJECT_PATH = '/ado'
+TMP_FILE = 'running_db_creation.delete_me'
+if os.path.isfile(TMP_FILE):
+    os.remove(TMP_FILE)
+
+
+@click.group()
+def ado_do():
+    """A command line tool to setup and maintain ado services from inside
+    a docker container farm."""
+
+
+@ado_do.command('pip-install')
+@click.argument('container')
+@click.pass_context
+def pip_install(context, container, **kwargs):
+    '''Install required packages for a container with pip'''
+    print('*** Install packages')
+    pip.main(
+        [
+            'install',
+            '-qr',
+            os.path.join(
+                PROJECT_PATH, 'etc',
+                'requirements-%s.txt' % container)])
+    import site
+    reload(site)
+
+
+@ado_do.command('db-create')
+@click.argument('database_name')
+@click.pass_context
+def db_create(context, database_name):
+    '''Create a database'''
+    context.invoke(pip_install, container='tryton')
+    if _db_exist(database_name):
+        print('Create, but database "%s" exists: Skip!' % database_name)
+        return
+
+    print('Create database "%s": ' % database_name, end='')
+    pg_url = urlparse(os.environ.get('DB_1_PORT'))
+    subprocess.call(
+        [
+            '/usr/bin/createdb',
+            '-h', pg_url.hostname,
+            '-p', str(pg_url.port),
+            '-U', 'postgres',
+            '-O', 'postgres',
+            '-E UTF-8',
+            database_name])
+
+
+@ado_do.command('db-delete')
+@click.argument('database_name')
+@click.pass_context
+def db_delete(context, database_name):
+    '''Delete a database'''
+    print('Delete database "%s": ' % database_name, end='')
+    pg_url = urlparse(os.environ.get('DB_1_PORT'))
+    subprocess.call(
+        [
+            '/usr/bin/dropdb',
+            '-h', pg_url.hostname,
+            '-p', str(pg_url.port),
+            '-U', 'postgres',
+            database_name])
+
+
+@ado_do.command('db-psql')
+@click.argument('database_name')
+@click.pass_context
+def db_psql(context, database_name):
+    '''SQL console for a database'''
+    print('Use ctrl-d or \\q to quit ...')
+    pg_url = urlparse(os.environ.get('DB_1_PORT'))
+    subprocess.call(
+        [
+            '/usr/bin/psql',
+            '-h', pg_url.hostname,
+            '-p', str(pg_url.port),
+            '-U', 'postgres',
+            database_name])
+
+
+@ado_do.command('db-backup')
+@click.argument('database_name')
+@click.pass_context
+def db_backup(context, database_name):
+    '''Backup a database'''
+    pg_url = urlparse(os.environ.get('DB_1_PORT'))
+    subprocess.call(
+        [
+            '/usr/bin/pg_dump',
+            '-h', pg_url.hostname,
+            '-p', str(pg_url.port),
+            '-U', 'postgres',
+            database_name])
+
+
+@ado_do.command('db-demo-setup')
+@click.argument('database_name')
+@click.pass_context
+def db_demo_setup(context, database_name):
+    '''Set up demo data in database'''
+    context.invoke(pip_install, container='tryton')
+    # Check if db creation is already running
+    if os.path.isfile(TMP_FILE):
+        while os.path.isfile(TMP_FILE):
+            # Wait until db creation is finished
+            pass
+        time.sleep(3)
+
+    if not _db_exist(database_name):
+        with open(TMP_FILE, 'a'):
+            os.utime(TMP_FILE, None)
+
+        context.invoke(db_create, database_name=database_name)
+        _update(None, database_name)
+        subprocess.call(
+            [
+                '/usr/bin/python',
+                '-m', 'doctest',
+                '-v', os.path.join(
+                    PROJECT_PATH, 'etc', 'scenario_master_data.txt')])
+        os.remove(TMP_FILE)
+    else:
+        print(
+            'Setup demo data, but database "%s" exists: Skip!' % database_name)
+
+
+@ado_do.command('deploy-tryton')
+@click.argument('database_name')
+@click.pass_context
+def deploy_tryton(context, database_name):
+    '''Install, db_create, db_demo_setup and run tryton service'''
+    context.invoke(pip_install, container='tryton')
+    service = [
+        '/usr/local/bin/trytond',
+        '--dev',
+        '-c', os.path.join(PROJECT_PATH, 'etc', 'trytond.conf')]
+    subprocess.call(service)
+
+
+@ado_do.command('deploy-portal')
+@click.pass_context
+def deploy_portal(context):
+    '''Install and run portal service'''
+    context.invoke(pip_install, container='portal')
+    context.invoke(db_demo_setup, database_name='c3s')
+    trusted_proxy = 'trusted_proxy=' + str(os.environ.get('TRUSTED_PROXY'))
+    subprocess.call(
+        [
+            '/usr/local/bin/pserve',
+            os.path.join(
+                PROJECT_PATH, 'src', 'collecting_society.portal',
+                'development.ini'),
+            trusted_proxy,
+            '--reload'])
+
+
+@ado_do.command('deploy-api')
+@click.pass_context
+def deploy_api(context):
+    '''Install and run api service'''
+    context.invoke(pip_install, container='api')
+    context.invoke(db_demo_setup, database_name='c3s')
+    trusted_proxy = 'trusted_proxy=' + str(os.environ.get('TRUSTED_PROXY'))
+    subprocess.call(
+        [
+            '/usr/local/bin/pserve',
+            os.path.join(
+                PROJECT_PATH, 'src', 'collecting_society.portal',
+                'development.ini'),
+            trusted_proxy,
+            '--reload'])
+
+
+@ado_do.command()
+@click.option(
+    '--modules', '-m',
+    help='Single module or comma separated list of modules to update. '
+    'Whitspace not allowed!')
+@click.argument('database_name')
+@click.pass_context
+def update(context, modules, database_name):
+    '''Update services'''
+    context.invoke(pip_install, container='tryton')
+    _update(modules, database_name)
+
+
+def _update(modules, database_name):
+    print('Update services ...')
+    if modules:
+        modules = modules.split(',')
+
+    os.environ['TRYTONPASSFILE'] = 'etc/trytonpassfile'
+    command = [
+        '/usr/local/bin/trytond',
+        '-d', database_name,
+        '-c', os.path.join(PROJECT_PATH, 'etc', 'trytond.conf')]
+    if modules:
+        command.append('-u')
+        command.extend(modules)
+    else:
+        command.append('--all')
+    subprocess.call(command)
+
+
+def _db_exist(db_name):
+    from trytond.config import config
+    from trytond import backend
+    config.update_etc(os.path.join(PROJECT_PATH, 'etc', 'trytond.conf'))
+    Database = backend.get('Database')
+    database = Database().connect()
+    cursor = database.cursor()
+    databases = database.list(cursor)
+    exist = db_name in databases
+    cursor.close()
+    database.close()
+    return exist
+
+
+if __name__ == '__main__':
+    ado_do()

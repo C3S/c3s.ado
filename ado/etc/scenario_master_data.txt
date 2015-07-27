@@ -1,0 +1,819 @@
+# -*- coding: utf-8 -*-
+# For copyright and license terms, see COPYRIGHT.rst (top level of repository)
+# Repository: https://github.com/C3S/c3s.ado
+
+============
+Initial Data
+============
+Master Data
+===========
+Imports
+-------
+::
+
+    >>> import uuid
+    >>> import datetime
+    >>> from dateutil.relativedelta import relativedelta
+    >>> from decimal import Decimal
+    >>> from proteus import config, Model, Wizard
+    >>> today = datetime.date.today()
+    >>> now = datetime.datetime.now()
+
+Create a Tryton database
+------------------------
+::
+
+    >>> config = config.set_trytond('postgresql://postgres@db_1:5432/c3s')
+
+Install meta ado module into database
+-------------------------------------
+::
+
+    >>> Module = Model.get('ir.module.module')
+    >>> c3s_module, = Module.find(
+    ...     [('name', '=', 'collecting_society')])
+    >>> c3s_module.click('install')
+    >>> Wizard('ir.module.module.install_upgrade').execute('upgrade')
+
+Common Defaults
+---------------
+Country Germany::
+
+    >>> Country = Model.get('country.country')
+    >>> germany, = Country.find([('code', '=', 'DE')])
+
+Currency Euro::
+
+    >>> Currency = Model.get('currency.currency')
+    >>> euro, = Currency.find([('code', '=', 'EUR')])
+
+Set general precision for currencies::
+
+    >>> euro.rounding = Decimal('0.000001')
+    >>> euro.save()
+
+Company
+-------
+::
+
+    >>> Company = Model.get('company.company')
+    >>> Party = Model.get('party.party')
+
+    >>> party = Party(
+    ...     name='Cultural Commons Collecting Society SCE '
+    ...         'mit beschränkter Haftung')
+
+    >>> _ = party.addresses.pop()
+    >>> party_address = party.addresses.new(
+    ...     street='Heyestraße 194',
+    ...     zip='40625',
+    ...     city='Düsseldorf',
+    ...     country=germany)
+    >>> party.save()
+
+    >>> company_config = Wizard('company.company.config')
+    >>> company_config.execute('company')
+    >>> company = company_config.form
+    >>> company.party = party
+    >>> company.currency = euro
+    >>> company_config.execute('add')
+    >>> company, = Company.find()
+
+Reload the context::
+
+    >>> User = Model.get('res.user')
+    >>> config._context = User.get_preferences(True, config.context)
+
+Create payment term::
+
+    >>> PaymentTerm = Model.get('account.invoice.payment_term')
+    >>> PaymentTermLine = Model.get('account.invoice.payment_term.line')
+    >>> payment_term = PaymentTerm(name='Term')
+    >>> payment_term_line = PaymentTermLine(type='remainder', days=14)
+    >>> payment_term.lines.append(payment_term_line)
+    >>> payment_term.save()
+
+Create fiscal year::
+
+    >>> FiscalYear = Model.get('account.fiscalyear')
+    >>> Sequence = Model.get('ir.sequence')
+    >>> SequenceStrict = Model.get('ir.sequence.strict')
+    >>> fiscalyear = FiscalYear(name='%s' % today.year)
+    >>> fiscalyear.start_date = today + relativedelta(month=1, day=1)
+    >>> fiscalyear.end_date = today + relativedelta(month=12, day=31)
+    >>> fiscalyear.company = company
+    >>> post_move_sequence = Sequence(name='%s' % today.year,
+    ...     code='account.move', company=company)
+    >>> post_move_sequence.save()
+    >>> fiscalyear.post_move_sequence = post_move_sequence
+    >>> invoice_seq = SequenceStrict(name=str(today.year),
+    ...     code='account.invoice', company=company)
+    >>> invoice_seq.save()
+    >>> fiscalyear.out_invoice_sequence = invoice_seq
+    >>> fiscalyear.in_invoice_sequence = invoice_seq
+    >>> fiscalyear.out_credit_note_sequence = invoice_seq
+    >>> fiscalyear.in_credit_note_sequence = invoice_seq
+    >>> fiscalyear.save()
+    >>> FiscalYear.create_period([fiscalyear.id], config.context)
+
+Create chart of accounts::
+
+    >>> AccountTemplate = Model.get('account.account.template')
+    >>> Account = Model.get('account.account')
+    >>> account_template, = AccountTemplate.find([('parent', '=', None)])
+    >>> create_chart = Wizard('account.create_chart')
+    >>> create_chart.execute('account')
+    >>> create_chart.form.account_template = account_template
+    >>> create_chart.form.company = company
+    >>> create_chart.execute('create_account')
+    >>> receivable, = Account.find([
+    ...         ('kind', '=', 'receivable'),
+    ...         ('company', '=', company.id),
+    ...         ])
+    >>> payable, = Account.find([
+    ...         ('kind', '=', 'payable'),
+    ...         ('company', '=', company.id),
+    ...         ])
+    >>> revenue, = Account.find([
+    ...         ('kind', '=', 'revenue'),
+    ...         ('company', '=', company.id),
+    ...         ])
+    >>> expense, = Account.find([
+    ...         ('kind', '=', 'expense'),
+    ...         ('company', '=', company.id),
+    ...         ])
+    >>> cash, = Account.find([
+    ...         ('kind', '=', 'other'),
+    ...         ('company', '=', company.id),
+    ...         ('name', '=', 'Main Cash'),
+    ...         ])
+    >>> account_tax, = Account.find([
+    ...         ('kind', '=', 'other'),
+    ...         ('company', '=', company.id),
+    ...         ('name', '=', 'Main Tax'),
+    ...         ])
+
+    >>> create_chart.form.account_receivable = receivable
+    >>> create_chart.form.account_payable = payable
+    >>> create_chart.execute('create_properties')
+
+Create Transitory account view::
+
+    >>> root_account, = Account.find([('name', '=', 'Minimal Account Chart')])
+    >>> transitory_account_view = Account(
+    ...     name='Transitory Accounts',
+    ...     kind='view',
+    ...     parent=root_account,
+    ...     company=company)
+    >>> transitory_account_view.save()
+
+
+Create account for imp artist hat::
+
+    >>> AccountType = Model.get('account.account.type')
+    >>> hat_account_type = AccountType(
+    ...     name='Hat',
+    ...     company=company)
+    >>> hat_account_type.save()
+    >>> hat_account = Account(
+    ...     name='Hat',
+    ...     type=hat_account_type,
+    ...     kind='hat',
+    ...     parent=transitory_account_view,
+    ...     company=company)
+    >>> hat_account.save()
+
+.. todo:: This needs re-work: Balance, Income Staement, VAT
+
+Set hat account as default hat account::
+
+    >>> CSConfig = Model.get('collecting_society.configuration')
+    >>> csconfig, = CSConfig.find()
+    >>> csconfig.default_hat_account = hat_account
+    >>> csconfig.save()
+
+Create account for imp web user pocket::
+
+    >>> pocket_account_type = AccountType(
+    ...     name='Pocket',
+    ...     company=company)
+    >>> pocket_account_type.save()
+    >>> pocket_account = Account(
+    ...     name='Pocket',
+    ...     type=pocket_account_type,
+    ...     kind='pocket',
+    ...     parent=transitory_account_view,
+    ...     company=company)
+    >>> pocket_account.save()
+
+Set pocket account as default pocket account::
+
+    >>> CSConfig = Model.get('collecting_society.configuration')
+    >>> csconfig, = CSConfig.find()
+    >>> csconfig.default_pocket_account = pocket_account
+    >>> csconfig.save()
+
+Create tax::
+
+    >>> TaxCode = Model.get('account.tax.code')
+    >>> Tax = Model.get('account.tax')
+    >>> tax = Tax()
+    >>> tax.name = '19% Mehrwertsteuer'
+    >>> tax.description = '19% Mehrwertsteuer'
+    >>> tax.type = 'percentage'
+    >>> tax.rate = Decimal('.19')
+    >>> tax.invoice_account = account_tax
+    >>> tax.credit_note_account = account_tax
+    >>> invoice_base_code = TaxCode(name='invoice base')
+    >>> invoice_base_code.save()
+    >>> tax.invoice_base_code = invoice_base_code
+    >>> invoice_tax_code = TaxCode(name='invoice tax')
+    >>> invoice_tax_code.save()
+    >>> tax.invoice_tax_code = invoice_tax_code
+    >>> credit_note_base_code = TaxCode(name='credit note base')
+    >>> credit_note_base_code.save()
+    >>> tax.credit_note_base_code = credit_note_base_code
+    >>> credit_note_tax_code = TaxCode(name='credit note tax')
+    >>> credit_note_tax_code.save()
+    >>> tax.credit_note_tax_code = credit_note_tax_code
+    >>> tax.save()
+
+Create transitory journal::
+
+    >>> AccountJournal = Model.get('account.journal')
+    >>> sequence_journal, = Sequence.find([('code', '=', 'account.journal')])
+    >>> journal = AccountJournal(
+    ...     name='Transitory', code='TRANS', type='general',
+    ...     sequence=sequence_journal)
+    >>> journal.save()
+
+Create employees:
+
+Create company internal users:
+
+Final
+=====
+Set configuration wizard items done::
+
+    >>> Item = Model.get('ir.module.module.config_wizard.item')
+    >>> items = Item.find()
+    >>> for item in items:
+    ...     item.state = 'done'
+    ...     item.save()
+
+Set German language translatable::
+
+    >>> Language = Model.get('ir.lang')
+    >>> german_language, = Language.find([('code', '=', 'de_DE')])
+    >>> german_language.translatable = True
+    >>> german_language.save()
+
+
+=========
+Demo Data
+=========
+
+Used Model Index
+================
+::
+    >>> Artist = Model.get('artist')
+    >>> ArtistPayeeAcceptance = Model.get('artist.payee.acceptance')
+    >>> WebUser = Model.get('web.user')
+    >>> WebUserRole = Model.get('web.user.role')
+    >>> Party = Model.get('party.party')
+    >>> Address = Model.get('party.address')
+    >>> Bank = Model.get('bank')
+    >>> BankAccount = Model.get('bank.account')
+    >>> BankAccountNumber = Model.get('bank.account.number')
+    >>> Client = Model.get('client')
+
+
+Web-User Scenario
+=================
+The web user scenario tests the authentication functionalities for a new user
+to become a valid web user.
+
+Create a web user::
+
+    >>> web_user = WebUser()
+
+Set login credentials and other essentials::
+
+    >>> web_user.email = 'wilbert_webuser@c3s.cc'
+    >>> web_user.password = 'wu'
+    >>> web_user.nickname = 'wil'
+    >>> web_user.save()
+
+.. todo:: Avatar picture upload
+
+
+Check opt-in state::
+
+    >>> assert(web_user.opt_in_state == 'new')
+
+Check opt-in link is a correctly formatted UUID::
+
+    >>> assert(bool(uuid.UUID(web_user.opt_in_uuid, version=4)))
+
+Double opt-in Email with UUID in link is send by the portal::
+
+    >>> web_user.opt_in_state = 'mail-sent'
+    >>> web_user.save()
+
+The web user clicks on the link sent by the portal.
+The received UUID is equal to the stored UUID in web_user.opt_in_uuid::
+
+    >>> web_user.opt_in_state = 'opted-in'
+    >>> web_user.save()
+
+Now the web user is a valid portal user.
+
+If the web user tries to login with wrong credentials
+(email: wilbert_webuser@c3s.cc and password: wuXXX) the
+authentication result is None::
+
+    >>> logged_in_web_user = WebUser.authenticate(
+    ...     'wilbert_webuser@c3s.cc','wuXXX',config.context)
+    >>> assert(type(logged_in_web_user) == type(None))
+
+
+If the web user tries to login with his credentials
+(email: wilbert_webuser@c3s.cc and password: wu) the authentication
+result is the authenticated web user object::
+
+    >>> logged_in_web_user = WebUser.authenticate(
+    ...     'wilbert_webuser@c3s.cc',
+    ...     'wu',
+    ...     config.context)
+    >>> assert(logged_in_web_user)
+    >>> logged_in_web_user
+    Pool().get('web.user')(1)
+
+    >>> logged_in_web_user = WebUser(logged_in_web_user.id)
+    >>> assert(logged_in_web_user.nickname == u'wil')
+
+
+Creative Scenario
+=================
+A valid creative web user. See Web-User Scenario for details::
+
+    >>> creative = WebUser()
+    >>> creative.email='cres_creative@c3s.cc'
+    >>> creative.password='cc'
+    >>> web_user.nickname = 'wil'
+    >>> creative.opt_in_state = 'opted-in'
+    >>> creative.save()
+
+Add another person name::
+
+    >>> creative.party.name = 'Crescentia Creative'
+
+Define roles::
+
+    >>> creative.default_role = 'creative'
+    >>> creative.roles.extend(
+    ...     WebUserRole.find([('name', '=', 'Creative')]))
+
+Add an address::
+
+    >>> creative.party.addresses.append(
+    ...     Address(
+    ...         street='Berliner Strasse 123',
+    ...         zip='51063',
+    ...         city='Köln',
+    ...         country=germany))
+
+Other settings::
+
+    >>> creative.userfeedback_creative = True
+
+Save creative web user::
+
+    >>> creative.save()
+
+Add a bank account for the creative::
+
+    >>> creative_bank_account = BankAccount(currency=euro)
+    >>> creative_bank_account.bank = Bank(
+    ...     bic='AACSDE33', party=Party(name='Sparkasse Aachen'))
+    >>> creative_bank_account.owners.append(creative.party)
+    >>> creative_bank_account.numbers.append(
+    ...     BankAccountNumber(
+    ...         type='iban', number='DE70 3905 0000 0012 3456 78'))
+    >>> creative_bank_account.bank.party.save()
+    >>> creative_bank_account.bank.save()
+    >>> creative_bank_account.save()
+
+
+IMP Scenario
+============
+A valid opted-in imp web user. See Web-User Scenario for details::
+
+    >>> imp = WebUser()
+    >>> imp.email = 'alf_imp@c3s.cc'
+    >>> imp.password = 'cc'
+    >>> imp.nickname = 'alf123'
+    >>> imp.opt_in_state = 'opted-in'
+    >>> imp.save()
+
+Define roles::
+
+    >>> imp.default_role = 'imp'
+    >>> imp.roles.extend(
+    ...     WebUserRole.find([('name', '=', 'IMP')]))
+
+Add an address::
+
+    >>> imp.party.addresses.append(
+    ...     Address(
+    ...         street='Im Johannistal 12',
+    ...         zip='52064',
+    ...         city='Aachen',
+    ...         country=germany))
+
+Save imp web user::
+
+    >>> imp.save()
+
+Add a bank account for the imp::
+
+    >>> imp_bank_account = BankAccount(currency=euro)
+    >>> imp_bank_account.bank = Bank(
+    ...     bic='BYLADE1001', party=Party(name='DKB Deutsche Kreditbank'))
+    >>> imp_bank_account.owners.append(imp.party)
+    >>> imp_bank_account.numbers.append(
+    ...     BankAccountNumber(
+    ...         type='iban', number='DE45 1203 0000 1234 5678 90'))
+    >>> imp_bank_account.bank.party.save()
+    >>> imp_bank_account.bank.save()
+    >>> imp_bank_account.save()
+
+
+
+
+Artist Scenario
+===============
+Add band /'angstalt/ and solo artist members::
+
+    >>> angstalt = Artist(
+    ...     name="/'ʌŋʃtʌlt/",
+    ...     group=True,
+    ...     description='''
+    ...     /'angstalt/ was founded in 1995 by the twin brothers Stefan
+    ...     Hintz (bass, keyboards) and Norman Hintz (drums, percussion)
+    ...     as well as Meik "m." Michalke (guitar, voice, bass).
+    ...     In the early phase, which was marked by the self-released debut
+    ...     "ex." (1998) and the retrospective archive sampler
+    ...     "[ha1b:2ehn]" (2000), the project would be completed by Alex
+    ...     Pavlidis (bass, voice), until he became full-time bassist with
+    ...     Sometree in 2002.
+    ...
+    ...     Since 2005 until now /'angstalt/ consists of Stefan Hintz (bass,
+    ...     keyboards), Norman Hintz (drums, percussion) Tobias "Rettich"
+    ...     Rettstadt (drums, bass, keyboards) and Meik "m." Michalke (
+    ...     guitar, voice, bass). Yes, that's two drummers.
+    ...
+    ...     m. released two books of poems as of yet, "zur blütezeit in
+    ...     herzwüsten (ein floristisches handbuch zur steingärtnerei)" and
+    ...     "phantomherzen". Since 2005 he's also responsible (under his
+    ...     legal name) for a germany-wide Creative Commons project called
+    ...     OpenMusicContest.org.
+    ...
+    ...     Concerts are quite rare (e.g., 2008 as support for Cranes).
+    ...     If you don't want to miss one of the intense appearances, you
+    ...     should subscribe to the newsletter.
+    ...
+    ...     Source Text: https://www.jamendo.com/de/artist/364964/angstalt
+    ...     Source Picture: http://www.angstalt.de/bilder/logo_dbz_degb.png
+    ...     Date of last access: 2015-04-09 18:00''')
+    >>> member = angstalt.solo_artists.new(
+    ...     name='Stefan Hintz')
+    >>> member = angstalt.solo_artists.new(
+    ...     name='Norman Hintz')
+    >>> member = angstalt.solo_artists.new(
+    ...     name='m.')
+    >>> member = angstalt.solo_artists.new(
+    ...     name='Tobias "Rettich" Rettstadt')
+    >>> angstalt.save()
+
+Add a band logo::
+
+    >>> with open('etc/logo_angstalt.png', 'r') as f:
+    ...     picture_data = f.read()
+    >>> angstalt.picture_data = picture_data
+    >>> angstalt.save()
+
+Check if artist has no access parties::
+
+    >>> angstalt.access_parties
+    []
+
+Check domain on payee::
+
+    >>> angstalt.payee = imp.party
+    >>> angstalt.save()
+    Traceback (most recent call last):
+        ...
+    UserError: ('UserError', (u'The value of the field "Payee" on "Artist" is not valid according to its domain.', ''))
+
+The error is raised, because the 'imp' web user party is not in
+angstalts access parties list.
+
+
+Artist Claim
+------------
+A newly created web user named 'meik' ...::
+
+    >>> meik = WebUser()
+    >>> meik.email = 'meik@c3s.cc'
+    >>> meik.password = 'meik'
+    >>> meik.nickname = 'm.'
+    >>> meik.opt_in_state = 'opted-in'
+    >>> meik.save()
+    >>> meik.party.name = 'Meik Michalke'
+    >>> meik.party.save()
+
+... wanted to claim the solo artist "m."::
+
+    >>> solo_artist, = Artist.find([('name', '=', 'm.')])
+
+.. note:: The process of validating the artist claim is done separately.
+
+In case the claim is successfully validated, the solo artist
+"m." is manually append to the artists of webuser meik as an
+administrative task::
+
+    >>> solo_artist.party = meik.party
+    >>> solo_artist.save()
+
+Web user meik can become payee of the solo artist::
+
+    >>> solo_artist.payee = meik.party
+    >>> solo_artist.save()
+
+Web user meik has a bank account::
+
+    >>> meik_bank_account = BankAccount(currency=euro)
+    >>> meik_bank_account.bank, = Bank.find([('bic', '=', 'BYLADE1001')])
+    >>> meik_bank_account.owners.append(meik.party)
+    >>> meik_bank_account.numbers.append(
+    ...     BankAccountNumber(
+    ...         type='iban', number='DE53 1203 0000 0011 1111 11'))
+    >>> meik_bank_account.bank.party.save()
+    >>> meik_bank_account.bank.save()
+    >>> meik_bank_account.save()
+    >>> meik.reload()
+
+Web user meik also wants to become payee of the group angstalt, because he is
+a band member::
+
+    >>> angstalt.payee = meik.party
+    >>> angstalt.save()
+
+.. note:: The process of validating an artist payee is done separately.
+
+
+Webuser meik, the only member of the group angstalt can be administrative
+validated as payee::
+
+    >>> angstalt.valid_payee = True
+
+
+Webuser Invitation
+------------------
+Web user meik from the band /'angstalt/ wants to invite more members of his
+band.
+He invites his colleague Tobias to claim the artist
+Tobias "Rettich" Rettstadt.
+The artist of his colleage has the unique identifier::
+
+    >>> artist_to_invite, = Artist.find(
+    ...     [('name', '=', 'Tobias "Rettich" Rettstadt')])
+    >>> token = artist_to_invite.invitation_token
+
+.. note:: The system sends an email to the email address of the
+    web user to invite (tobias), given by the inviting web user (meik).
+
+The email recipient sends us the token back and needs to authenticate
+as a web user.
+In this case the web user does not exist and is created as the new web user
+tobi::
+
+    >>> tobi = WebUser()
+    >>> tobi.email = 'tobi@c3s.cc'
+    >>> tobi.password = 'tobi'
+    >>> tobi.nickname = 'Rettich'
+    >>> tobi.opt_in_state = 'opted-in'
+    >>> tobi.save()
+    >>> tobi.party.name = 'Tobias Rettstadt'
+
+In the invitation email from tobis colleague meik is a reference token for
+an artist::
+
+    >>> solo_artist, = Artist.find([('invitation_token', '=', token)])
+
+The identified solo artist will be added to the web user tobi.
+
+.. note:: The process of validating the artist claim is done separately.
+
+In case the claim is successfully validated, the solo artist
+'Tobias "Rettich" Rettstadt' is append to the artists of
+web user tobi in an administrative task::
+
+    >>> solo_artist.party = tobi.party
+    >>> solo_artist.save()
+
+Check the count of access parties to Band angstalt::
+
+    >>> len(angstalt.access_parties)
+    2
+
+The parties of web user meik and tobi have access to angstalt::
+
+    >>> [a.name for a in angstalt.access_parties]
+    [u'Meik Michalke', u'tobi@c3s.cc']
+
+
+Payee Proposal
+--------------
+Web user tobi wanted to become a new payee for the band angstalt.
+The actual payee of angstalt is meik and there is no actual proposal
+for a new payees::
+
+    >>> angstalt.payee == meik.party
+    True
+    >>> angstalt.valid_payee
+    True
+    >>> angstalt.payee_proposal is None
+    True
+
+Tobi proposes himself as a new payee::
+
+    >>> angstalt.payee_proposal = tobi.party
+    >>> angstalt.save()
+
+When adding a new proposal, the status of the actual payee is
+automatically set to invalid::
+
+    >>> angstalt.valid_payee
+    False
+
+The valid payee flag is used to control payments to the actual payee.
+If the payee is invalid, no money is paid to any bank account.
+
+Now the members of the band can vote (accept) for the proposed payee by adding
+themselves to the list of payee acceptances::
+
+    >>> angstalt.payee_acceptances.append(meik.party)
+    >>> angstalt.payee_acceptances == angstalt.access_parties
+    False
+
+The proposed payee is accepted, when every web user party in the
+access parties list accepts the new payee::
+
+    >>> angstalt.payee_acceptances.append(tobi.party)
+    >>> angstalt.payee_acceptances == angstalt.access_parties
+    True
+
+In case everyone accepts the new payee, the payee field is updated::
+
+    >>> angstalt.payee = angstalt.payee_proposal
+    >>> angstalt.save()
+    >>> angstalt.reload()
+
+The clean up for the next vote is partially done automatically::
+
+    >>> angstalt.payee_proposal is None
+    True
+    >>> angstalt.valid_payee
+    False
+    >>> for i in range(len(angstalt.payee_acceptances)):
+    ...     _ = angstalt.payee_acceptances.pop()
+    >>> angstalt.save()
+
+Bank Accounts
+-------------
+The band has an own bank account.
+For this, the band is a legal entity having an own party::
+
+    >>> angstalt.party = Party(name="/'angstalt/")
+    >>> angstalt.party.save()
+    >>> angstalt.save()
+
+Add bank account to the band::
+
+    >>> angstalt_bank_account = BankAccount(currency=euro)
+    >>> angstalt_bank_account.bank, = Bank.find([('bic', '=', 'AACSDE33')])
+    >>> angstalt_bank_account.owners.append(angstalt.party)
+    >>> angstalt_bank_account.numbers.append(
+    ...     BankAccountNumber(
+    ...         type='iban', number='DE59 3905 0000 0022 2222 22'))
+    >>> angstalt_bank_account.bank.party.save()
+    >>> angstalt_bank_account.bank.save()
+    >>> angstalt_bank_account.save()
+    >>> angstalt.reload()
+
+
+
+
+Client Scenario
+===============
+Plugin Registration
+-------------------
+An authenticated web user "alf_imp@c3s.cc" registers a client plugin::
+
+    >>> imp, = WebUser.find([('email', '=', 'alf_imp@c3s.cc')])
+    >>> client = imp.clients.new(
+    ...     uuid = '81d012b9-6dfb-48e7-9c1a-46dca3f70dbc',
+    ...     player_name = 'Winamp',
+    ...     player_version = '12.0.33',
+    ...     plugin_name = 'WinImp',
+    ...     plugin_version = '1.0',
+    ...     plugin_vendor = 'C3S')
+
+Save::
+
+    >>> imp.save()
+
+The web user trys to register a client player with a known
+client_uuid::
+
+    >>> clients = Client.find(
+    ...     [
+    ...         ('web_user', '=', imp.id),
+    ...         ('uuid', '=', '81d012b9-6dfb-48e7-9c1a-46dca3f70dbc'),
+    ... ])
+
+The client is known::
+
+    >>> len(clients) == 1
+    True
+
+
+The web user trys to register a client player with an unknown
+client_uuid 'bb62f84c-c876-448a-8b8d-f1215ba300fa'::
+
+    >>> clients = Client.find(
+    ...     [
+    ...         ('web_user', '=', imp.id),
+    ...         ('uuid', '=', 'bb62f84c-c876-448a-8b8d-f1215ba300fa'),
+    ... ])
+
+The client is not known::
+
+    >>> len(clients) == 0
+    True
+
+
+
+
+Utilisation IMP
+-----------------
+A web user utilises music::
+
+    >>> UtilisationIMP = Model.get('creation.utilisation.imp')
+    >>> utilisation = UtilisationIMP()
+    >>> utilisation.client, = Client.find([('uuid', '=', '81d012b9-6dfb-48e7-9c1a-46dca3f70dbc')])
+    >>> utilisation.time_played = now
+    >>> utilisation.time_submitted = datetime.datetime.now()
+    >>> utilisation.fingerprint = '0000500005000050000500005000050001900019000190001900019000190002f0002f0002f0002f 0002f0002f0005900059000590005900059000590009b0009b0009b0009b0009b0009b000db000db 000db000db000db000db000fb000fb000fb000fb000fb000fb0015d0015d0015d0015d0015d0015d 0017e0017e0017e0017e0017e0017e001e0001e0001e0001e0001e0001e000200002000020000200 00200002000024100241002410024100241002410028300283002830028300283002830001700017 00017000170001700017000280002800028000280002800028000580005800058000580005800058 0009a0009a0009a0009a0009a0009a000fb000fb000fb000fb000fb000fb0012d0012d0012d0012d 0012d0012d0015d0015d0015d0015d0015d0015d0017e0017e0017e0017e0017e0017e001af001af 001af001af001af001af001f1001f1001f1001f1001f1001f1002410024100241002410024100241 00262002620026200262002620026200027000270002700027000270002700059000590005900059 0005900059000aa000aa000aa000aa000aa000aa000db000db000db000db000db000db0015e0015e 0015e0015e0015e0015e001af001af001af001af001af001af001f0001f0001f0001f0001f0001f0 00222002220022200222002220022200263002630026300263002630026300017000170001700017 00017000170002800028000280002800028000280005800058000580005800058000580009900099 00099000990009900099000db000db000db000db000db000db000ec000ec000ec000ec000ec000ec 0011c0011c0011c0011c0011c0011c0019e0019e0019e0019e0019e0019e001e0001e0001e0001e0 001e0001e0001f0001f0001f0001f0001f0001f00022100221002210022100221002210023100231 00231002310023100231000170001700017000170001700017000270002700027000270002700027 0005800058000580005800058000580009a0009a0009a0009a0009a0009a000aa000aa000aa000aa 000aa000aa000db000db000db000db000db000db000ec000ec000ec000ec000ec000ec0011c0011c 0011c0011c0011c0011c0019f0019f0019f0019f0019f0019f001e0001e0001e0001e0001e0001e0 002420024200242002420024200242002a3002a3002a3002a3002a3002a3002b4002b4002b4002b4 002b4002b4002f6002f6002f6002f6002f6002f60001700017000170001700017000170002800028 00028000280002800028000580005800058000580005800058000790007900079000790007900079 0009a0009a0009a0009a0009a0009a000db000db000db000db000db000db0012c0012c0012c0012c 0012c0012c0019e0019e0019e0019e0019e0019e001af001af001af001af001af001af0022100221 00221002210022100221002620026200262002620026200262002a3002a3002a3002a3002a3002a3 0001700017000170001700017000170002800028000280002800028000280009a0009a0009a0009a 0009a0009a000aa000aa000aa000aa000aa000aa000db000db000db000db000db000db000eb000eb 000eb000eb000eb000eb0011c0011c0011c0011c0011c0011c0015d0015d0015d0015d0015d0015d 0019e0019e0019e0019e0019e0019e001af001af001af001af001af001af00221002210022100221 0022100221002310023100231002310023100231002a3002a3002a3002a3002a3002a30002800028 000280002800028000280004e0004e0004e0004e0004e0004e000760007600076000760007600076 0009a0009a0009a0009a0009a0009a000aa000aa000aa000aa000aa000aa000ec000ec000ec000ec 000ec000ec0019e0019e0019e0019e0019e0019e001af001af001af001af001af001af001e0001e0 001e0001e0001e0001e0001f0001f0001f0001f0001f0001f0002210022100221002210022100221 002a3002a3002a3002a3002a3002a3002b4002b4002b4002b4002b4002b4de26ea643ae3843bce35 b2055ce30cd82b2fff490a61065999eaeb6edc597e304608e25d679aee444c9bc0f0e264471e9c92 c9e387bc96262d617860438d788af422ff3c0ae38740ccfa0a1d45b4234f2ff2be2b544b50817860 e66305df5fda352d626cdf620e7e281d45b4234fc9e3812783da352fc464e663045ff4f1547d626c df620a59d7df35a4234f83cfb127835df5ffc4643fbcf71ea0f1547add6edf620a59d73fbcf71ea0 f1547b2e4cb2e4cb2e4c3fbcfb2e4cb2e4cb2e4cb2e4cb2e4c8a047fe1b2c73d2d4af4248662bc0e 88ffc53cbadcd07806d04aa3dae2bd409ef58cf1623e4c95bd245ca6663fa352eb4841b91dbcd3f8 7c3beca153919fd7580c13c4bce209fe16463a07ecf15dca5f9d6c27bdc490b8996fa308ec6abd14'
+    >>> utilisation.fingerprinting_algorithm = 'echonest-codegen'
+    >>> utilisation.fingerprinting_version = '4.12'
+    >>> utilisation.title = 'GHOSTS 19.515'
+    >>> utilisation.artist = 'OPTYM'
+    >>> utilisation.release = ''
+    >>> utilisation.track_number = ''
+    >>> utilisation.duration = '315.22'
+    >>> utilisation.save()
+
+
+Scenario Identify imp utilisation
+===================================
+Pick an imp utilisation
+
+Query fingerprint
+
+Retrieve results
+
+Found artist, creation and a unique identifier
+
+Check artist
+
+Check creation
+
+Add artist
+
+Add creation
+
+Add utilisation
+
+
+Final
+=====
+Set Admin user to german language::
+
+    >>> User = Model.get('res.user')
+    >>> admin_user, = User.find([('login', '=', 'admin')])
+    >>> admin_user.language = german_language
+    >>> admin_user.save()
+    >>> # import interlude; interlude.interact(locals())
