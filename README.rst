@@ -433,7 +433,7 @@ In case you need disk space, remove all local cached images::
     $ docker rmi $(docker images -q)
 
 
-Copyright / Licence
+Copyright / License
 ===================
 For infos on copyright and licenses, see ``./COPYRIGHT.rst``
 
