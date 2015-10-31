@@ -804,8 +804,38 @@ Check creation
 Add artist
 
 Add creation
+------------
+Add a new creation::
+
+    >>> Creation = Model.get('creation')
+    >>> creation = Creation(
+    ...     title='Song',
+    ... )
+    >>> creation.save()
+
+Add a file as attachment of the creation::
+
+    >>> with open('etc/logo_angstalt.png', 'r') as f:
+    ...     file_data = f.read()
+
+    >>> Attachment = Model.get('ir.attachment')
+    >>> attachment = Attachment(
+    ...     type='data',
+    ...     name='song.wav',
+    ...     resource=creation,
+    ...     data=file_data,
+    ... )
+    >>> attachment.save()
+
+Check identity of original file and stored file in attachment::
+
+    >>> del attachment
+    >>> attachment_test, = Attachment.find()
+    >>> assert file_data == str(attachment_test.data)
+
 
 Add utilisation
+---------------
 
 
 Final
