@@ -79,22 +79,22 @@ repositories = (
     ),
     (
         'https://github.com/C3S/collecting_society.git',
-        '--branch=imp',
+        '--branch=develop',
         'ado/src/collecting_society'
     ),
     (
         'https://github.com/C3S/collecting_society.portal.git',
-        '--branch=imp',
+        '--branch=develop',
         'ado/src/collecting_society.portal'
     ),
     (
         'https://github.com/C3S/collecting_society.portal.creative.git',
-        '--branch=imp',
+        '--branch=develop',
         'ado/src/collecting_society.portal.creative',
     ),
     (
         'https://github.com/C3S/collecting_society.portal.imp.git',
-        '--branch=imp',
+        '--branch=develop',
         'ado/src/collecting_society.portal.imp'
     ),
 )
