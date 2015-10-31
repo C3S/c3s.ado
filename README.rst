@@ -120,6 +120,8 @@ On the host system connect to::
 
 Using containers
 ================
+Services
+--------
 For development purposes it is convenient to have the possibility to debug the
 running code.
 To start only the necessary services for developing a service
@@ -127,6 +129,8 @@ use e.g::
 
     $ docker-compose run --service-ports portal ado-do deploy-portal
     $ docker-compose run --service-ports api ado-do deploy-api
+    $ docker-compose run --service-ports portal ado-do deploy-tryton c3s
+
 
 The portal service is started with ``ado-do`` inside a portal container.
 The tryton service can be started with::
@@ -162,25 +166,28 @@ container start::
     $ docker-compose run portal ado-do --help
     $ docker-compose run portal ado-do COMMAND --help
 
-Update all modules in an existing database ::
 
-    $ docker-compose run portal ado-do update -m all DATABASE_NAME
+Database
+--------
+Update all modules in an existing database with name DATABASE_NAME::
+
+    $ docker-compose run tryton ado-do update DATABASE_NAME
 
 
-To update specific modules in an existing database with name
-DATABASE_NAME::
+Update specific modules in an existing database::
 
-    $ docker-compose run portal ado-do update -m MODULE_NAME1[,MODULE_NAME2,...]  \
-        DATABASE_NAME
+    $ docker-compose run tryton ado-do update  \
+        -m MODULE_NAME1[,MODULE_NAME2,…] DATABASE_NAME
 
 E.g.::
 
-    $ docker-compose run tryton ado-do update -m party,account,collecting_society c3s
+    $ docker-compose run tryton ado-do update  \
+        -m party,account,collecting_society c3s
 
 
-To manually examine and edit a database, use::
+Examine and edit a database, use::
 
-    $ docker-compose run portal ado-do db-psql DATABASE_NAME
+    $ docker-compose run tryton ado-do db-psql DATABASE_NAME
 
 Backup a database::
 
@@ -189,8 +196,26 @@ Backup a database::
 
 Delete a database::
 
-    $ docker-compose run portal ado-do db-delete DATABASE_NAME
+    $ docker-compose run tryton ado-do db-delete DATABASE_NAME
 
+
+Create a new database::
+
+    $ docker-compose run tryton ado-do db-create DATABASE_NAME
+
+Re-new a database::
+
+    $ docker-compose run tryton ado-do db-delete DATABASE_NAME
+    $ docker-compose run tryton ado-do db-demo-setup DATABASE_NAME
+
+The ``ado-do db-demo-setup`` command combines the following two steps::
+
+    $ # docker-compose run tryton ado-do db-create DATABASE_NAME
+    $ # docker-compose run tryton ado-do update DATABASE_NAME
+
+
+Service Scaling
+---------------
 To scale increasing load it is possible to start more service containers on
 demand::
 
@@ -213,12 +238,22 @@ Lookup a specific host port in use::
 .. note:: This command has a fixed but not merged and released bug:
     https://github.com/docker/compose/issues/667
 
+
+Integration Tests
+-----------------
 To run tests in the tryton container use::
 
     $ docker-compose run tryton sh -c \
           'ado-do pip-install tryton \
           && export DB_NAME=:memory: \
           && python /ado/src/trytond/trytond/tests/run-tests.py'
+
+To run the demo-setup again, use::
+
+    $ docker-compose run tryton sh -c \
+          'ado-do pip-install tryton \
+          && python -m doctest -v etc/scenario_master_data.txt'
+
 
 Maintenance After c3s.ado Update
 --------------------------------
@@ -238,6 +273,7 @@ Build containers, this time without a cache::
 Start containers::
 
     $ docker-compose up
+
 
 Deployment
 ==========
