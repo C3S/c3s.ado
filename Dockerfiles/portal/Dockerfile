@@ -18,6 +18,6 @@ RUN pip install  \
     pyramid_mailer==0.14 \
     pyramid_oauth2_provider==0.2  \
     webtest==2.0.18  \
-    waitress==0.8.9
-
+    waitress==0.8.9 \
+    requests==2.9.1
 
