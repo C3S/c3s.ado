@@ -36,7 +36,7 @@ Setup
 Clone this repository into your working space::
 
     $ cd WORKING/SPACE
-    $ git clone git@sparkle.c3s.cc:c3s.ado.git
+    $ git clone git@github.com:C3S/c3s.ado.git
 
 All setup and maintenance tasks are done in the root path of the
 ``c3s.ado/`` repository.
