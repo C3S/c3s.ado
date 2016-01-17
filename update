@@ -10,27 +10,56 @@ import subprocess
 import config
 
 base_path = os.path.dirname(os.path.abspath(__file__))
-for repos, branch, path in config.repositories:
+git_branch = subprocess.check_output(
+    ('git', 'rev-parse', '--abbrev-ref', 'HEAD'),
+    stderr=subprocess.STDOUT)
+print("""=====================================================================
+  This is the c3s.ado update script.
+  It will get or update some relevant repositories.
+
+  Using c3s.ado on branch {}
+  Installing/updating in {}
+  Reading info from config...
+  Checking repositories...
+------------------------------------------------------------
+""".format(
+    git_branch,
+    base_path
+))
+
+for repo, branch, path in config.repositories:
     target_path = os.path.join(base_path, path)
     if not os.path.exists(target_path):
-        print('mkdir {}'.format(target_path))
+        print('Missing directory, creating {}'.format(path))
         os.makedirs(target_path)
-    if repos:
+    if repo:
+        print('------------------------------------------------------------')
         try:
+            print('Will use git to clone "{}" branch "{}" into "{}": '.format(
+                repo, branch.lstrip('--branch='), path))
             clone_result = subprocess.check_output(
-                ('git', 'clone', branch, repos, target_path),
+                ('git', 'clone', branch, repo, target_path),
                 stderr=subprocess.STDOUT)
             print(
                 'git clone "{}": '.format(os.path.basename(target_path)))
         except subprocess.CalledProcessError as e:
-            pull_result = subprocess.check_output(
-                ('git', 'pull', '--no-stat'), cwd=target_path,
+            print("Directory exists; using pull instead of clone:")
+            # first: make sure the repo is on the correct branch
+            checkout_branch = subprocess.check_output(
+                ('git', 'checkout', branch.lstrip('--branch=')), cwd=target_path,
                 stderr=subprocess.STDOUT)
-            print(
-                'git pull "{}": '.format(os.path.basename(target_path)),
-                end='')
-            if pull_result:
-                print('::'.join(x for x in pull_result.strip().split('\n')))
+            try:
+                pull_result = subprocess.check_output(
+                    ('git', 'pull'), cwd=target_path,
+                    stderr=subprocess.STDOUT)
+                print(
+                    'git pull "{}": '.format(os.path.basename(target_path)),
+                    end='')
+                if pull_result:
+                    print('::'.join(x for x in pull_result.strip().split('\n')))
+            except subprocess.CalledProcessError as e2:
+                print("There was a problem: \n\n{}".format(e2.output))
+                sys.exit("Exiting. Please check for errors above!")
 
 for source_filename, target_filename in config.configfiles:
     target = os.path.join(base_path, target_filename)
@@ -38,3 +67,10 @@ for source_filename, target_filename in config.configfiles:
         source = os.path.join(base_path, source_filename)
         print('copy file %s to %s' % (source_filename, target_filename))
         shutil.copyfile(source, target)
+
+print("""Done.
+
+  Now you may go ahead and use 
+    * 'docker-compose build' to build or
+    * 'docker-compose up' to start the system.
+=====================================================================""")
