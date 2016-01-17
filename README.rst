@@ -35,8 +35,8 @@ Setup
 =====
 Clone this repository into your working space::
 
-    $ cd WORKING/SPACE
-    $ git clone git@sparkle.c3s.cc:c3s.ado.git
+    $ cd MY/WORKING/SPACE
+    $ git clone https://github.com/C3S/c3s.ado.git
 
 All setup and maintenance tasks are done in the root path of the
 ``c3s.ado/`` repository.
@@ -468,6 +468,7 @@ In case you need disk space, remove all local cached images::
 
     $ docker rmi $(docker images -q)
 
+Should images not been removed, try the -f (force) switch.
 
 Copyright / License
 ===================
