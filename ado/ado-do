@@ -161,12 +161,13 @@ def deploy_portal(context):
     context.invoke(pip_install, container='portal')
     context.invoke(db_demo_setup, database_name='c3s')
     trusted_proxy = 'trusted_proxy=' + str(os.environ.get('TRUSTED_PROXY'))
+    environment = str(os.environ.get('ENVIRONMENT')) + '.ini'
     subprocess.call(
         [
             '/usr/local/bin/pserve',
             os.path.join(
-                PROJECT_PATH, 'src', 'collecting_society.portal',
-                'development.ini'),
+                PROJECT_PATH, 'src', 'collecting_society.portal', environment
+            ),
             trusted_proxy,
             '--reload'])
 
@@ -178,12 +179,13 @@ def deploy_api(context):
     context.invoke(pip_install, container='api')
     context.invoke(db_demo_setup, database_name='c3s')
     trusted_proxy = 'trusted_proxy=' + str(os.environ.get('TRUSTED_PROXY'))
+    environment = str(os.environ.get('ENVIRONMENT')) + '.ini'
     subprocess.call(
         [
             '/usr/local/bin/pserve',
             os.path.join(
-                PROJECT_PATH, 'src', 'collecting_society.portal',
-                'development.ini'),
+                PROJECT_PATH, 'src', 'collecting_society.portal', environment
+            ),
             trusted_proxy,
             '--reload'])
 
