@@ -1,3 +1,6 @@
+# Swap files
+*~
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -55,6 +58,7 @@ target/
 
 # Ado
 ado/src
+postgresql-data
 
 # Configuration files for docker container
 /*.env
