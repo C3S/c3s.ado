@@ -70,13 +70,21 @@ def db_delete(context, database_name):
     '''Delete a database'''
     print('Delete database "%s": ' % database_name, end='')
     pg_url = urlparse(os.environ.get('DB_1_PORT'))
-    subprocess.call(
-        [
-            '/usr/bin/dropdb',
-            '-h', pg_url.hostname,
-            '-p', str(pg_url.port),
-            '-U', 'postgres',
-            database_name])
+    max_tries = 60
+    tries = 0
+    result = 1
+    while ((tries < max_tries) and (result == 1)):
+        tries += 1
+        print("try number {} of max. {}".format(tries, max_tries))
+        result = subprocess.call(
+            [
+                '/usr/bin/dropdb',
+                '-h', pg_url.hostname,
+                '-p', str(pg_url.port),
+                '-U', 'postgres',
+                database_name])
+        print("the result: {} (will try again if not 0)".format(result))
+    print("done.")
 
 
 @ado_do.command('db-psql')
