@@ -26,7 +26,7 @@ and configurator for the needed Docker container setups:
 
 Requirements
 ============
-A Linux or OS X system, `docker <http://docs.docker.com/installation>`,
+A Linux or OS X system, `docker <https://docs.docker.com/engine/installation/>`,
 `docker-compose  <https://docs.docker.com/compose/install/>`
 and `git <http://git-scm.com/downloads>`.
 
@@ -36,7 +36,17 @@ Setup
 Clone this repository into your working space::
 
     $ cd WORKING/SPACE
-    $ git clone git@sparkle.c3s.cc:c3s.ado.git
+    $ git clone https://github.com/C3S/c3s.ado.git
+
+Choose the environment to build:
+
+1. For production environment switch to the ``master`` branch::
+
+    $ git checkout master
+
+2. For development environment switch to the ``develop`` branch::
+
+    $ git checkout develop
 
 All setup and maintenance tasks are done in the root path of the
 ``c3s.ado/`` repository.
