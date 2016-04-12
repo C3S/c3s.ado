@@ -6,6 +6,7 @@ from __future__ import print_function
 import os
 import time
 import subprocess
+import glob
 from urlparse import urlparse
 
 import pip
@@ -147,6 +148,46 @@ def db_demo_setup(context, database_name):
     else:
         print(
             'Setup demo data, but database "%s" exists: Skip!' % database_name)
+
+
+@ado_do.command('run-tests', context_settings=dict(
+    ignore_unknown_options=True))
+@click.option('--path', default=None)
+@click.argument('nargs', nargs=-1, type=click.UNPROCESSED)
+@click.pass_context
+def run_tests(context, path, nargs):
+    '''
+    Run all tests for portal and plugins or
+    specific tests in PROJECT_PATH/<path>
+    with additional parameter <nargs>
+    '''
+    flagfile = "/tmp/installed"
+    if not os.path.exists(flagfile):
+        context.invoke(pip_install, container='portal')
+        open(flagfile, 'w').close()
+    # context.invoke(db_demo_setup, database_name='c3s')
+    paths = glob.glob(
+        os.path.join(PROJECT_PATH, 'src', 'collecting_society.portal*')
+    )
+    modules = []
+    for item in paths:
+        modules.append(
+            os.path.basename(os.path.normpath(item)).replace('.', '_')
+        )
+    if path is not None:
+        paths = [os.path.join(PROJECT_PATH, path)]
+    subprocess.call(
+        [
+            'nosetests',
+            '--verbose',
+            '--logging-level=CRITICAL',
+            '--all-modules',
+            '--with-coverage',
+            '--cover-erase',
+            '--cover-inclusive',
+            '--cover-package='+','.join(modules),
+        ] + list(nargs) + list(paths)
+    )
 
 
 @ado_do.command('deploy-tryton')

@@ -382,6 +382,40 @@ To rebuild a new database use the following pattern::
 
 .. warning:: All data in this database will be deleted!
 
+Testing
+-------
+Run all tests in PATH (optional) with nosetests PARAMETER (optional)::
+
+    $ docker-compose run portal ado-do run-tests [--path=PATH] [PARAMETER...]
+
+Run all tests for portal + plugins::
+
+    $ docker-compose run portal ado-do run-tests
+
+Run all tests for portal + plugins quiet, drop into pdb on failures or errors::
+
+    $ docker-compose run portal ado-do run-tests --quiet --pdb
+
+Run only tests for portal::
+
+    $ docker-compose run portal ado-do run-tests \
+        --path src/collecting_society.portal
+
+Run only unittests of portal::
+
+    $ docker-compose run portal ado-do run-tests \
+        --path src/collecting_society.portal/collecting_society_portal/tests/unit
+
+Run a specific unittest for a model of portal quiet::
+
+    $ docker-compose run portal ado-do run-tests \
+        --path src/collecting_society.portal/collecting_society_portal/tests/unit/models.py:TESTCLASS.TESTMETHOD --quiet
+
+For repeated testing without recreating the container every time, start the
+container once and run the tests from within::
+
+    $ docker-compose run portal bash
+    $ ado-do run-tests [--path=PATH] [PARAMETER...]
 
 Problems
 ========
@@ -421,17 +455,6 @@ Add a new fingerprint provided by the server administrator or
 simply remove the whole file, if the setup is not in production use::
 
     rm ~/.config/tryton/3.4/known_hosts
-
-Testing
--------
-For manual execution of nosetests, you need to start the container:
-
-* docker-compose run portal bash
-* ado-do pip-install portal
-
-execute nosetest:
-
-* nosetests -v --nologcapture /ado/src/collecting_society.portal/collecting_society_portal/tests/nose-test-01.py
 
 Engine Room
 -----------
