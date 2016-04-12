@@ -37,6 +37,11 @@ Clone this repository into your working space::
 
     $ cd MY/WORKING/SPACE
     $ git clone https://github.com/C3S/c3s.ado.git
+    
+All setup and maintenance tasks are done in the root path of the
+``c3s.ado/`` repository::
+
+    $ cd c3s.ado
 
 Choose the environment to build:
 
@@ -48,12 +53,8 @@ Choose the environment to build:
 
     $ git checkout develop
 
-All setup and maintenance tasks are done in the root path of the
-``c3s.ado/`` repository.
-
 Update the environment, clone/pull development repositories::
 
-    $ cd c3s.ado
     $ ./update
 
 Build docker containers::
