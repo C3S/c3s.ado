@@ -58,6 +58,7 @@ target/
 
 # Ado
 ado/src
+ado/tmp
 postgresql-data
 
 # Configuration files for docker container
