@@ -4,6 +4,7 @@
 '''Collects several tools for maintaining *ado* in a docker container.'''
 from __future__ import print_function
 import os
+import shutil
 import time
 import subprocess
 import glob
@@ -29,16 +30,20 @@ def ado_do():
 @click.pass_context
 def pip_install(context, container, **kwargs):
     '''Install required packages for a container with pip'''
-    print('*** Install packages')
-    pip.main(
-        [
-            'install',
-            '-qr',
-            os.path.join(
-                PROJECT_PATH, 'etc',
-                'requirements-%s.txt' % container)])
+    print('Install packages for ' + container + ' ... ', end='')
+    flagfile = "/tmp/pip_install_" + container
+    if not os.path.exists(flagfile):
+        pip.main(
+            [
+                'install',
+                '-qr',
+                os.path.join(
+                    PROJECT_PATH, 'etc',
+                    'requirements-%s.txt' % container)])
+        open(flagfile, 'w').close()
     import site
     reload(site)
+    print('ok')
 
 
 @ado_do.command('db-create')
@@ -51,7 +56,7 @@ def db_create(context, database_name):
         print('Create, but database "%s" exists: Skip!' % database_name)
         return
 
-    print('Create database "%s": ' % database_name, end='')
+    print('Create database "%s" ... ' % database_name, end='')
     pg_url = urlparse(os.environ.get('DB_1_PORT'))
     subprocess.call(
         [
@@ -62,6 +67,7 @@ def db_create(context, database_name):
             '-O', 'postgres',
             '-E UTF-8',
             database_name])
+    print('ok')
 
 
 @ado_do.command('db-delete')
@@ -69,14 +75,13 @@ def db_create(context, database_name):
 @click.pass_context
 def db_delete(context, database_name):
     '''Delete a database'''
-    print('Delete database "%s": ' % database_name, end='')
+    print('Delete database "%s" ... ' % database_name, end='')
     pg_url = urlparse(os.environ.get('DB_1_PORT'))
     max_tries = 60
     tries = 0
     result = 1
     while ((tries < max_tries) and (result == 1)):
         tries += 1
-        print("try number {} of max. {}".format(tries, max_tries))
         result = subprocess.call(
             [
                 '/usr/bin/dropdb',
@@ -84,8 +89,31 @@ def db_delete(context, database_name):
                 '-p', str(pg_url.port),
                 '-U', 'postgres',
                 database_name])
-        print("the result: {} (will try again if not 0)".format(result))
-    print("done.")
+    if result is 0:
+        print("ok")
+    else:
+        print("error: {}".format(result))
+
+
+@ado_do.command('db-copy')
+@click.argument('dbname-src')
+@click.argument('dbname-dst')
+@click.pass_context
+def db_copy(context, dbname_src, dbname_dst):
+    '''Copy a database'''
+    print('Copy database "%s" to "%s" ... ' % (dbname_src, dbname_dst), end='')
+    pg_url = urlparse(os.environ.get('DB_1_PORT'))
+    subprocess.call(
+        [
+            '/usr/bin/createdb',
+            '-h', pg_url.hostname,
+            '-p', str(pg_url.port),
+            '-U', 'postgres',
+            '-O', 'postgres',
+            '-T', dbname_src,
+            '-E UTF-8',
+            dbname_dst])
+    print('ok')
 
 
 @ado_do.command('db-psql')
@@ -138,6 +166,10 @@ def db_demo_setup(context, database_name):
 
         context.invoke(db_create, database_name=database_name)
         _update(None, database_name)
+        os.environ['TRYTOND_CONFIG'] = os.path.join(
+            PROJECT_PATH, 'etc', 'tryton.conf'
+        )
+        os.environ['DB_NAME'] = database_name
         subprocess.call(
             [
                 '/usr/bin/python',
@@ -150,32 +182,148 @@ def db_demo_setup(context, database_name):
             'Setup demo data, but database "%s" exists: Skip!' % database_name)
 
 
+@ado_do.command('create-test-db')
+@click.option('--dbtype', default='postgres')
+@click.option('--dbname', default='test')
+@click.pass_context
+def create_test_db(context, dbtype, dbname):
+    '''Creates the test database'''
+
+    # configuration
+    _db_type = dbtype
+    _db_name = dbname
+    _db_tpl = _db_name + "_template"
+    _file_path = os.path.join(PROJECT_PATH, 'tmp', 'files')
+    _db_src_path = os.path.join(_file_path, _db_name + '.sqlite')
+    _db_dst_path = os.path.join(PROJECT_PATH, 'etc', _db_name + '.sqlite')
+    _trytond_conf = 'trytond_test_' + _db_type + '.conf'
+    os.environ['TRYTOND_CONFIG'] = os.path.join(
+        PROJECT_PATH, 'etc', _trytond_conf
+    )
+
+    # recreate db
+    if _db_type == 'sqlite':
+        os.environ['DB_NAME'] = _db_name
+        if os.path.isfile(_db_src_path):
+            os.unlink(_db_src_path)
+        open(_db_src_path, 'w').close()
+        os.chmod(_db_src_path, 0777)
+    if _db_type == 'postgres':
+        os.environ['DB_NAME'] = _db_tpl
+        # if _db_exist(_db_tpl):
+        context.invoke(db_delete, database_name=_db_tpl)
+        context.invoke(db_create, database_name=_db_tpl)
+
+    # init db
+    if _db_type == 'sqlite':
+        _update(None, _db_name, _trytond_conf)
+    if _db_type == 'postgres':
+        _update(None, _db_tpl, _trytond_conf)
+    subprocess.call(
+        [
+            '/usr/bin/python',
+            '-m', 'doctest',
+            '-v', os.path.join(
+                PROJECT_PATH, 'etc', 'scenario_master_data.txt'
+            )
+        ]
+    )
+
+    # copy db
+    if _db_type == 'sqlite':
+        if os.path.isfile(_db_dst_path):
+            os.unlink(_db_dst_path)
+        shutil.copyfile(_db_src_path, _db_dst_path)
+        os.chmod(_db_src_path, 0777)
+    if _db_type == 'postgres':
+        # if _db_exist(_db_name):
+        context.invoke(db_delete, database_name=_db_name)
+        context.invoke(db_copy, dbname_src=_db_tpl, dbname_dst=_db_name)
+
+
 @ado_do.command('run-tests', context_settings=dict(
     ignore_unknown_options=True))
-@click.option('--path', default=None)
+@click.option('--dbtype', default='postgres')
+@click.option('--dbname', default='test')
+@click.option('--reset/--no-reset', default=True)
+@click.option('--path', default=False)
 @click.argument('nargs', nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
-def run_tests(context, path, nargs):
+def run_tests(context, dbtype, dbname, reset, path, nargs):
     '''
-    Run all tests for portal and plugins or
-    specific tests in PROJECT_PATH/<path>
-    with additional parameter <nargs>
+    Run all tests for portal and plugins or specific tests in
+    PROJECT_PATH/<path> with additional parameter <nargs>.
     '''
-    flagfile = "/tmp/installed"
-    if not os.path.exists(flagfile):
-        context.invoke(pip_install, container='portal')
-        open(flagfile, 'w').close()
-    # context.invoke(db_demo_setup, database_name='c3s')
-    paths = glob.glob(
+
+    # configuration
+    _db_type = dbtype
+    _db_name = dbname
+    _db_tpl = _db_name + "_template"
+    _file_path = os.path.join(PROJECT_PATH, 'tmp', 'files')
+    _db_src_path = os.path.join(PROJECT_PATH, 'etc', 'test.sqlite')
+    _db_dst_path = os.path.join(_file_path, _db_name + '.sqlite')
+    _trytond_conf = 'trytond_test_' + _db_type + '.conf'
+    os.environ['DB_NAME'] = _db_name
+    os.environ['TRYTOND_CONFIG'] = os.path.join(
+        PROJECT_PATH, 'etc', _trytond_conf
+    )
+    print("\nCONFIGURE TESTS ...\n")
+    print("- testpath: %s" % (path or 'all'))
+    print("- parameter: %s" % list(nargs))
+    print("- dbtype: %s" % _db_type)
+    print("- dbname: %s" % _db_name)
+    print("- reset: %s" % bool(reset))
+    print("- trytondconf: %s" % os.environ['TRYTOND_CONFIG'])
+    print("- filepath: %s" % _file_path)
+
+    # install packages
+    print("\nPREPARE TESTS ...\n")
+    context.invoke(pip_install, container='portal')
+    context.invoke(pip_install, container='tryton')
+
+    # recreate db, delete files
+    if reset:
+        if os.path.exists(_file_path):
+            shutil.rmtree(_file_path)
+        os.makedirs(_file_path)
+        if _db_type == 'postgres':
+            if _db_exist(_db_tpl):
+                context.invoke(db_delete, database_name=_db_name)
+                context.invoke(
+                    db_copy, dbname_src=_db_tpl, dbname_dst=_db_name
+                )
+            else:
+                context.invoke(
+                    create_test_db, dbtype=_db_type, dbname=_db_name
+                )
+        if _db_type == 'sqlite':
+            if os.path.isfile(_db_src_path):
+                shutil.copyfile(_db_src_path, _db_dst_path)
+                os.chmod(_db_src_path, 0777)
+            else:
+                context.invoke(
+                    create_test_db, dbtype=_db_type, dbname=_db_name
+                )
+
+    # prepare paths
+    basepaths = glob.glob(
         os.path.join(PROJECT_PATH, 'src', 'collecting_society.portal*')
     )
     modules = []
-    for item in paths:
-        modules.append(
-            os.path.basename(os.path.normpath(item)).replace('.', '_')
-        )
-    if path is not None:
+    testpaths = []
+    for basepath in basepaths:
+        module = os.path.basename(os.path.normpath(basepath)).replace('.', '_')
+        modules.append(module)
+        testpaths.append(os.path.join(basepath, module, 'tests'))
+    if path:
         paths = [os.path.join(PROJECT_PATH, path)]
+    else:
+        paths = [os.path.join(path, 'unit') for path in testpaths] +\
+                [os.path.join(path, 'functional') for path in testpaths] +\
+                [os.path.join(path, 'integration') for path in testpaths]
+
+    # start tests
+    print("\nSTART TESTS ...\n")
     subprocess.call(
         [
             'nosetests',
@@ -252,16 +400,20 @@ def update(context, modules, database_name):
     _update(modules, database_name)
 
 
-def _update(modules, database_name):
+def _update(modules, database_name, trytondconf=False):
     print('Update services ...')
     if modules:
         modules = modules.split(',')
 
+    _trytond_conf = trytondconf or 'trytond.conf'
     os.environ['TRYTONPASSFILE'] = 'etc/trytonpassfile'
+    os.environ['TRYTOND_CONFIG'] = os.path.join(
+        PROJECT_PATH, 'etc', _trytond_conf
+    )
     command = [
         '/usr/local/bin/trytond',
         '-d', database_name,
-        '-c', os.path.join(PROJECT_PATH, 'etc', 'trytond.conf')]
+        '-c', os.environ['TRYTOND_CONFIG']]
     if modules:
         command.append('-u')
         command.extend(modules)

@@ -57,6 +57,7 @@ docs/_build/
 target/
 
 # Ado
+ado/etc/*.sqlite
 ado/src
 ado/tmp
 postgresql-data

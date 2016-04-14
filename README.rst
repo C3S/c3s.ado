@@ -385,9 +385,13 @@ To rebuild a new database use the following pattern::
 
 Testing
 -------
+Create a database template, which will be copied and used for tests::
+
+    $ docker-compose run portal ado-do create-test-db
+
 Run all tests in PATH (optional) with nosetests PARAMETER (optional)::
 
-    $ docker-compose run portal ado-do run-tests [--path=PATH] [PARAMETER...]
+    $ docker-compose run portal ado-do run-tests [--path=PATH] [PARAMETER]
 
 Run all tests for portal + plugins::
 
@@ -407,10 +411,10 @@ Run only unittests of portal::
     $ docker-compose run portal ado-do run-tests \
         --path src/collecting_society.portal/collecting_society_portal/tests/unit
 
-Run a specific unittest for a model of portal quiet::
+Run a specific unittest for a model of portal::
 
     $ docker-compose run portal ado-do run-tests \
-        --path src/collecting_society.portal/collecting_society_portal/tests/unit/models.py:TESTCLASS.TESTMETHOD --quiet
+        --path src/collecting_society.portal/collecting_society_portal/tests/unit/models.py:TESTCLASS.TESTMETHOD
 
 For repeated testing without recreating the container every time, start the
 container once and run the tests from within::
