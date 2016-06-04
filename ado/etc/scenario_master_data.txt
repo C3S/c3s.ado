@@ -516,7 +516,7 @@ Check domain on payee::
     >>> angstalt.save()
     Traceback (most recent call last):
         ...
-    UserError: ('UserError', (u'The value of the field "Payee" on "Artist" is not valid according to its domain.', ''))
+    UserError: ('UserError', ('domain_validation_record', ''))
 
 The error is raised, because the 'imp' web user party is not in
 angstalts access parties list.
@@ -809,9 +809,11 @@ Add creation
 ------------
 Add a new creation::
 
+    >>> artist, = Artist.find([('name', '=', 'm.')])
     >>> Creation = Model.get('creation')
     >>> creation = Creation(
     ...     title='Song',
+    ...     artist=artist
     ... )
     >>> creation.save()
 

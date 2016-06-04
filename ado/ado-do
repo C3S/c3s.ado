@@ -167,7 +167,7 @@ def db_demo_setup(context, database_name):
         context.invoke(db_create, database_name=database_name)
         _update(None, database_name)
         os.environ['TRYTOND_CONFIG'] = os.path.join(
-            PROJECT_PATH, 'etc', 'tryton.conf'
+            PROJECT_PATH, 'etc', 'trytond.conf'
         )
         os.environ['DB_NAME'] = database_name
         subprocess.call(
