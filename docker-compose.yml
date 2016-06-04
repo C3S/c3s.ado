@@ -47,7 +47,7 @@ api:
     - ./api.env
 
 proxy:
-  image: jwilder/nginx-proxy
+  build: Dockerfiles/nginx
   volumes:
     - /var/run/docker.sock:/tmp/docker.sock
   ports:
