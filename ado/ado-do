@@ -1,7 +1,22 @@
 #!/usr/bin/env python
 # For copyright and license terms, see COPYRIGHT.rst (top level of repository)
 # Repository: https://github.com/C3S/c3s.ado
-'''Collects several tools for maintaining *ado* in a docker container.'''
+
+"""
+Command line tool to setup and maintain ado services in docker containers.
+
+The commands may be executed by `docker-compose` or within a container.
+
+Examples:
+
+    Execution by `docker-compose`:
+    >>> docker-compose run portal ado-do --help
+
+    Execution within a container:
+    >>> docker-compose run portal bash
+    >>> ado-do --help
+"""
+
 from __future__ import print_function
 import os
 import shutil
@@ -21,43 +36,68 @@ if os.path.isfile(TMP_FILE):
 
 @click.group()
 def ado_do():
-    """A command line tool to setup and maintain ado services from inside
-    a docker container farm."""
+    """
+    Command line tool to setup and maintain ado services in docker containers.
+    """
 
 
 @ado_do.command('pip-install')
 @click.argument('container')
 @click.pass_context
-def pip_install(context, container, **kwargs):
-    '''Install required packages for a container with pip'''
+def pip_install(context, container):
+    """
+    Installs required packages for a CONTAINER with pip.
+
+    Requirements have to be defined in `./ado/etc/requirements-CONTAINER.txt`.
+
+    After installation a flag file is created within the container to avoid
+    multiple execution during its lifespan.
+    """
     print('Install packages for ' + container + ' ... ', end='')
     flagfile = "/tmp/pip_install_" + container
+
+    # check flagfile
     if not os.path.exists(flagfile):
+
+        # install packages
         pip.main(
             [
                 'install',
                 '-qr',
                 os.path.join(
                     PROJECT_PATH, 'etc',
-                    'requirements-%s.txt' % container)])
+                    'requirements-%s.txt' % container
+                )
+            ]
+        )
+
+        # create flagfile
         open(flagfile, 'w').close()
+
     import site
     reload(site)
     print('ok')
 
 
 @ado_do.command('db-create')
-@click.argument('database_name')
+@click.argument('dbname')
 @click.pass_context
-def db_create(context, database_name):
-    '''Create a database'''
+def db_create(context, dbname):
+    """
+    Creates the postrges database DBNAME.
+
+    The execution is skipped if the database already exists.
+    """
+    print('Create database "%s" ... ' % dbname, end='')
     context.invoke(pip_install, container='tryton')
-    if _db_exist(database_name):
-        print('Create, but database "%s" exists: Skip!' % database_name)
+    pg_url = urlparse(os.environ.get('DB_1_PORT'))
+
+    # check database
+    if _db_exist(dbname):
+        print('Create, but database "%s" exists: Skip!' % dbname)
         return
 
-    print('Create database "%s" ... ' % database_name, end='')
-    pg_url = urlparse(os.environ.get('DB_1_PORT'))
+    # create database
     subprocess.call(
         [
             '/usr/bin/createdb',
@@ -66,29 +106,43 @@ def db_create(context, database_name):
             '-U', 'postgres',
             '-O', 'postgres',
             '-E UTF-8',
-            database_name])
+            dbname
+        ]
+    )
+
     print('ok')
 
 
 @ado_do.command('db-delete')
-@click.argument('database_name')
+@click.argument('dbname')
 @click.pass_context
-def db_delete(context, database_name):
-    '''Delete a database'''
-    print('Delete database "%s" ... ' % database_name, end='')
+def db_delete(context, dbname):
+    """
+    Deletes the postrges database DBNAME.
+
+    On error the deletion is retried 60 times.
+    """
+    print('Delete database "%s" ... ' % dbname, end='')
     pg_url = urlparse(os.environ.get('DB_1_PORT'))
     max_tries = 60
     tries = 0
     result = 1
+
+    # retry
     while ((tries < max_tries) and (result == 1)):
         tries += 1
+
+        # delete database
         result = subprocess.call(
             [
                 '/usr/bin/dropdb',
                 '-h', pg_url.hostname,
                 '-p', str(pg_url.port),
                 '-U', 'postgres',
-                database_name])
+                dbname
+            ]
+        )
+
     if result is 0:
         print("ok")
     else:
@@ -100,9 +154,13 @@ def db_delete(context, database_name):
 @click.argument('dbname-dst')
 @click.pass_context
 def db_copy(context, dbname_src, dbname_dst):
-    '''Copy a database'''
+    """
+    Creates the postrges database DBNAME_DST from template DBNAME_SRC.
+    """
     print('Copy database "%s" to "%s" ... ' % (dbname_src, dbname_dst), end='')
     pg_url = urlparse(os.environ.get('DB_1_PORT'))
+
+    # copy database
     subprocess.call(
         [
             '/usr/bin/createdb',
@@ -112,113 +170,153 @@ def db_copy(context, dbname_src, dbname_dst):
             '-O', 'postgres',
             '-T', dbname_src,
             '-E UTF-8',
-            dbname_dst])
+            dbname_dst
+        ]
+    )
+
     print('ok')
 
 
 @ado_do.command('db-psql')
-@click.argument('database_name')
+@click.argument('dbname')
 @click.pass_context
-def db_psql(context, database_name):
-    '''SQL console for a database'''
+def db_psql(context, dbname):
+    """
+    Opens a SQL console for the database DBNAME.
+    """
     print('Use ctrl-d or \\q to quit ...')
     pg_url = urlparse(os.environ.get('DB_1_PORT'))
+
+    # open console
     subprocess.call(
         [
             '/usr/bin/psql',
             '-h', pg_url.hostname,
             '-p', str(pg_url.port),
             '-U', 'postgres',
-            database_name])
+            dbname
+        ]
+    )
 
 
 @ado_do.command('db-backup')
-@click.argument('database_name')
+@click.argument('dbname')
 @click.pass_context
-def db_backup(context, database_name):
-    '''Backup a database'''
+def db_backup(context, dbname):
+    """
+    Dumps the postgres database DBNAME to stdout.
+    """
     pg_url = urlparse(os.environ.get('DB_1_PORT'))
+
+    # backup database
     subprocess.call(
         [
             '/usr/bin/pg_dump',
             '-h', pg_url.hostname,
             '-p', str(pg_url.port),
             '-U', 'postgres',
-            database_name])
+            dbname
+        ]
+    )
 
 
 @ado_do.command('db-demo-setup')
-@click.argument('database_name')
+@click.argument('dbname')
 @click.pass_context
-def db_demo_setup(context, database_name):
-    '''Set up demo data in database'''
+def db_demo_setup(context, dbname):
+    """
+    Creates the postgres database DBNAME and sets up demo data.
+
+    The execution is skipped if the database already exists.
+
+    During installation a flagfile is created on the host to prevent multiple
+    execution from different docker containers.
+    """
     context.invoke(pip_install, container='tryton')
-    # Check if db creation is already running
+
+    # Check flagfile
     if os.path.isfile(TMP_FILE):
         while os.path.isfile(TMP_FILE):
-            # Wait until db creation is finished
             pass
         time.sleep(3)
 
-    if not _db_exist(database_name):
+    # Check database
+    if not _db_exist(dbname):
         with open(TMP_FILE, 'a'):
             os.utime(TMP_FILE, None)
 
-        context.invoke(db_create, database_name=database_name)
-        _update(None, database_name)
+        # Create database
+        context.invoke(db_create, dbname=dbname)
+
+        # Update trytond
+        _update(None, dbname)
+        os.environ['DB_NAME'] = dbname
         os.environ['TRYTOND_CONFIG'] = os.path.join(
             PROJECT_PATH, 'etc', 'trytond.conf'
         )
-        os.environ['DB_NAME'] = database_name
+
+        # Setup database
         subprocess.call(
             [
                 '/usr/bin/python',
                 '-m', 'doctest',
                 '-v', os.path.join(
-                    PROJECT_PATH, 'etc', 'scenario_master_data.txt')])
+                    PROJECT_PATH, 'etc', 'scenario_master_data.txt'
+                )
+            ]
+        )
+
         os.remove(TMP_FILE)
+
     else:
-        print(
-            'Setup demo data, but database "%s" exists: Skip!' % database_name)
+        print('Setup demo data, but database "%s" exists: Skip!' % dbname)
 
 
 @ado_do.command('create-test-db')
-@click.option('--dbtype', default='postgres')
-@click.option('--dbname', default='test')
+@click.option('--dbtype', default='postgres',
+              help='Type of database (default: postgres)')
+@click.option('--dbname', default='test',
+              help='Name of database (default: test)')
 @click.pass_context
 def create_test_db(context, dbtype, dbname):
-    '''Creates the test database'''
+    """
+    Recreates DBTYPE database DBNAME_template, sets it up and copies to DBNAME.
 
-    # configuration
+    The old database template and database will be overwritten.
+
+    DBTYPE 'sqlite' throws errors on setup, so postgres is recommended.
+    """
     _db_type = dbtype
     _db_name = dbname
-    _db_tpl = _db_name + "_template"
-    _file_path = os.path.join(PROJECT_PATH, 'tmp', 'files')
-    _db_src_path = os.path.join(_file_path, _db_name + '.sqlite')
-    _db_dst_path = os.path.join(PROJECT_PATH, 'etc', _db_name + '.sqlite')
     _trytond_conf = 'trytond_test_' + _db_type + '.conf'
     os.environ['TRYTOND_CONFIG'] = os.path.join(
         PROJECT_PATH, 'etc', _trytond_conf
     )
 
-    # recreate db
+    # Rereate database template
     if _db_type == 'sqlite':
+        _file_path = os.path.join(PROJECT_PATH, 'tmp', 'files')
+        _db_src_path = os.path.join(_file_path, _db_name + '.sqlite')
         os.environ['DB_NAME'] = _db_name
         if os.path.isfile(_db_src_path):
             os.unlink(_db_src_path)
         open(_db_src_path, 'w').close()
         os.chmod(_db_src_path, 0777)
-    if _db_type == 'postgres':
-        os.environ['DB_NAME'] = _db_tpl
-        # if _db_exist(_db_tpl):
-        context.invoke(db_delete, database_name=_db_tpl)
-        context.invoke(db_create, database_name=_db_tpl)
 
-    # init db
+    if _db_type == 'postgres':
+        _db_tpl = _db_name + "_template"
+        os.environ['DB_NAME'] = _db_tpl
+        context.invoke(db_delete, dbname=_db_tpl)
+        context.invoke(db_create, dbname=_db_tpl)
+
+    # Setup trytond
     if _db_type == 'sqlite':
         _update(None, _db_name, _trytond_conf)
+
     if _db_type == 'postgres':
         _update(None, _db_tpl, _trytond_conf)
+
+    # Setup database template
     subprocess.call(
         [
             '/usr/bin/python',
@@ -229,39 +327,50 @@ def create_test_db(context, dbtype, dbname):
         ]
     )
 
-    # copy db
+    # Copy database template
     if _db_type == 'sqlite':
+        _db_dst_path = os.path.join(PROJECT_PATH, 'etc', _db_name + '.sqlite')
         if os.path.isfile(_db_dst_path):
             os.unlink(_db_dst_path)
         shutil.copyfile(_db_src_path, _db_dst_path)
         os.chmod(_db_src_path, 0777)
+
     if _db_type == 'postgres':
-        # if _db_exist(_db_name):
-        context.invoke(db_delete, database_name=_db_name)
+        context.invoke(db_delete, dbname=_db_name)
         context.invoke(db_copy, dbname_src=_db_tpl, dbname_dst=_db_name)
 
 
 @ado_do.command('run-tests', context_settings=dict(
     ignore_unknown_options=True))
-@click.option('--dbtype', default='postgres')
-@click.option('--dbname', default='test')
-@click.option('--reset/--no-reset', default=True)
-@click.option('--path', default=False)
+@click.option('--dbtype', default='postgres',
+              help='Type of database (default: postgres)')
+@click.option('--dbname', default='test',
+              help='Name of database (default: test)')
+@click.option('--reset/--no-reset', default=True,
+              help='Reset the database (default: yes)')
+@click.option('--path', default=False,
+              help='Searchpath for tests (see nosetest)')
 @click.argument('nargs', nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def run_tests(context, dbtype, dbname, reset, path, nargs):
-    '''
-    Run all tests for portal and plugins or specific tests in
-    PROJECT_PATH/<path> with additional parameter <nargs>.
-    '''
+    """
+    Runs all tests for portal and plugins.
 
-    # configuration
+    Creates the test database template DBNAME_template, if not existant.
+    On RESET, the database DBNAME will be recreated from the template and
+    the tryton file folder will be deleted.
+
+    If no PATH is given, all tests of all portal plugins are included.
+    The test files should lie in the following subpaths of the plugins:
+
+        tests/unit
+        tests/functional
+        tests/integration
+    """
     _db_type = dbtype
     _db_name = dbname
     _db_tpl = _db_name + "_template"
     _file_path = os.path.join(PROJECT_PATH, 'tmp', 'files')
-    _db_src_path = os.path.join(PROJECT_PATH, 'etc', 'test.sqlite')
-    _db_dst_path = os.path.join(_file_path, _db_name + '.sqlite')
     _trytond_conf = 'trytond_test_' + _db_type + '.conf'
     os.environ['DB_NAME'] = _db_name
     os.environ['TRYTOND_CONFIG'] = os.path.join(
@@ -276,19 +385,22 @@ def run_tests(context, dbtype, dbname, reset, path, nargs):
     print("- trytondconf: %s" % os.environ['TRYTOND_CONFIG'])
     print("- filepath: %s" % _file_path)
 
-    # install packages
+    # Setup containers
     print("\nPREPARE TESTS ...\n")
     context.invoke(pip_install, container='portal')
     context.invoke(pip_install, container='tryton')
 
-    # recreate db, delete files
     if reset:
+
+        # Delete files
         if os.path.exists(_file_path):
             shutil.rmtree(_file_path)
         os.makedirs(_file_path)
+
+        # Recreate database
         if _db_type == 'postgres':
             if _db_exist(_db_tpl):
-                context.invoke(db_delete, database_name=_db_name)
+                context.invoke(db_delete, dbname=_db_name)
                 context.invoke(
                     db_copy, dbname_src=_db_tpl, dbname_dst=_db_name
                 )
@@ -297,6 +409,8 @@ def run_tests(context, dbtype, dbname, reset, path, nargs):
                     create_test_db, dbtype=_db_type, dbname=_db_name
                 )
         if _db_type == 'sqlite':
+            _db_src_path = os.path.join(PROJECT_PATH, 'etc', 'test.sqlite')
+            _db_dst_path = os.path.join(_file_path, _db_name + '.sqlite')
             if os.path.isfile(_db_src_path):
                 shutil.copyfile(_db_src_path, _db_dst_path)
                 os.chmod(_db_src_path, 0777)
@@ -305,7 +419,8 @@ def run_tests(context, dbtype, dbname, reset, path, nargs):
                     create_test_db, dbtype=_db_type, dbname=_db_name
                 )
 
-    # prepare paths
+    # Prepare paths
+    # 2DO: Reuse code in portal config.py; use plugins.pattern in portal .ini
     basepaths = glob.glob(
         os.path.join(PROJECT_PATH, 'src', 'collecting_society.portal*')
     )
@@ -322,7 +437,7 @@ def run_tests(context, dbtype, dbname, reset, path, nargs):
                 [os.path.join(path, 'functional') for path in testpaths] +\
                 [os.path.join(path, 'integration') for path in testpaths]
 
-    # start tests
+    # Start tests
     print("\nSTART TESTS ...\n")
     subprocess.call(
         [
@@ -339,24 +454,34 @@ def run_tests(context, dbtype, dbname, reset, path, nargs):
 
 
 @ado_do.command('deploy-tryton')
-@click.argument('database_name')
 @click.pass_context
-def deploy_tryton(context, database_name):
-    '''Install, db_create, db_demo_setup and run tryton service'''
+def deploy_tryton(context):
+    """
+    Deploys the tryton service.
+
+    Installs pip packages, creates and sets up database 'c3s' and runs the
+    tryton service (trytond).
+    """
     context.invoke(pip_install, container='tryton')
     service = [
         '/usr/local/bin/trytond',
         '--dev',
-        '-c', os.path.join(PROJECT_PATH, 'etc', 'trytond.conf')]
+        '-c', os.path.join(PROJECT_PATH, 'etc', 'trytond.conf')
+    ]
     subprocess.call(service)
 
 
 @ado_do.command('deploy-portal')
 @click.pass_context
 def deploy_portal(context):
-    '''Install and run portal service'''
+    """
+    Deploys the portal service.
+
+    Installs pip packages, creates and sets up database 'c3s' and runs the
+    portal service (pserve).
+    """
     context.invoke(pip_install, container='portal')
-    context.invoke(db_demo_setup, database_name='c3s')
+    context.invoke(db_demo_setup, dbname='c3s')
     trusted_proxy = 'trusted_proxy=' + str(os.environ.get('TRUSTED_PROXY'))
     environment = str(os.environ.get('ENVIRONMENT')) + '.ini'
     subprocess.call(
@@ -366,15 +491,22 @@ def deploy_portal(context):
                 PROJECT_PATH, 'src', 'collecting_society.portal', environment
             ),
             trusted_proxy,
-            '--reload'])
+            '--reload'
+        ]
+    )
 
 
 @ado_do.command('deploy-api')
 @click.pass_context
 def deploy_api(context):
-    '''Install and run api service'''
+    """
+    Deploys the portal service.
+
+    Installs pip packages, creates and sets up database 'c3s' and runs the
+    api service (pserve).
+    """
     context.invoke(pip_install, container='api')
-    context.invoke(db_demo_setup, database_name='c3s')
+    context.invoke(db_demo_setup, dbname='c3s')
     trusted_proxy = 'trusted_proxy=' + str(os.environ.get('TRUSTED_PROXY'))
     environment = str(os.environ.get('ENVIRONMENT')) + '.ini'
     subprocess.call(
@@ -384,7 +516,9 @@ def deploy_api(context):
                 PROJECT_PATH, 'src', 'collecting_society.portal', environment
             ),
             trusted_proxy,
-            '--reload'])
+            '--reload'
+        ]
+    )
 
 
 @ado_do.command()
@@ -392,19 +526,28 @@ def deploy_api(context):
     '--modules', '-m',
     help='Single module or comma separated list of modules to update. '
     'Whitspace not allowed!')
-@click.argument('database_name')
+@click.argument('dbname')
 @click.pass_context
-def update(context, modules, database_name):
-    '''Update services'''
+def update(context, modules, dbname):
+    """
+    Updates tryton modules for database DBNAME.
+    """
     context.invoke(pip_install, container='tryton')
-    _update(modules, database_name)
+    _update(modules, dbname)
 
 
-def _update(modules, database_name, trytondconf=False):
+def _update(modules, dbname, trytondconf=False):
+    """
+    Updates tryton modules for database DBNAME.
+
+    Args:
+        modules (str): Comma separated list of modules to update.
+        dbname (str): Name of database.
+        trytondconf (Optional[str]): Name of tryton config file.
+    """
     print('Update services ...')
     if modules:
         modules = modules.split(',')
-
     _trytond_conf = trytondconf or 'trytond.conf'
     os.environ['TRYTONPASSFILE'] = 'etc/trytonpassfile'
     os.environ['TRYTOND_CONFIG'] = os.path.join(
@@ -412,8 +555,9 @@ def _update(modules, database_name, trytondconf=False):
     )
     command = [
         '/usr/local/bin/trytond',
-        '-d', database_name,
-        '-c', os.environ['TRYTOND_CONFIG']]
+        '-d', dbname,
+        '-c', os.environ['TRYTOND_CONFIG']
+    ]
     if modules:
         command.append('-u')
         command.extend(modules)
@@ -422,7 +566,13 @@ def _update(modules, database_name, trytondconf=False):
     subprocess.call(command)
 
 
-def _db_exist(db_name):
+def _db_exist(dbname):
+    """
+    Checks if database exists.
+
+    Args:
+        dbname (str): Name of database.
+    """
     from trytond.config import config
     from trytond import backend
     config.update_etc(os.path.join(PROJECT_PATH, 'etc', 'trytond.conf'))
@@ -430,7 +580,7 @@ def _db_exist(db_name):
     database = Database().connect()
     cursor = database.cursor()
     databases = database.list(cursor)
-    exist = db_name in databases
+    exist = dbname in databases
     cursor.close()
     database.close()
     return exist
