@@ -8,7 +8,7 @@ db:
 
 tryton:
   build: Dockerfiles/tryton
-  command: ado-do deploy-tryton c3s
+  command: ado-do deploy-tryton
   volumes:
     - ./ado:/ado
   ports:
