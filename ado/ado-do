@@ -356,16 +356,30 @@ def run_tests(context, dbtype, dbname, reset, path, nargs):
     """
     Runs all tests for portal and plugins.
 
+    Starts nosetests and prints output to stdout.
+
     Creates the test database template DBNAME_template, if not existant.
-    On RESET, the database DBNAME will be recreated from the template and
-    the tryton file folder will be deleted.
+    On RESET, the database DBNAME will be recreated from this template and
+    the temporary tryton file folder will be deleted.
 
-    If no PATH is given, all tests of all portal plugins are included.
-    The test files should lie in the following subpaths of the plugins:
+    The location of the temporary tryton upload folder is configured in
+    `./ado/etc/tryton_test_DBTYPE.conf` (currently `./ado/tmp/files`).
 
-        tests/unit
-        tests/functional
-        tests/integration
+    The location of the screenshots of integration tests is configured within
+    `<portal>/tests/config.py` (currenty `./ado/tmp/screenshots).
+
+    The PATH to tests may be defined to test certain testfiles, testclasses or
+    test methods (see nosetests for the syntax).
+    If no PATH is given, all tests of portal and plugins are included.
+    The test files should be stored below the following subpaths by convention:
+
+        <portal||plugin>/tests/unit (unittest)
+
+        <portal||plugin>/tests/functional (webtest)
+
+        <portal||plugin>/tests/integration (selenium)
+
+    Additional NARGS will be passed to nosetests.
     """
     _db_type = dbtype
     _db_name = dbname
