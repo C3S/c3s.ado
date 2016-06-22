@@ -250,22 +250,6 @@ Lookup a specific host port in use::
     https://github.com/docker/compose/issues/667
 
 
-Integration Tests
------------------
-To run tests in the tryton container use::
-
-    $ docker-compose run tryton sh -c \
-          'ado-do pip-install tryton \
-          && export DB_NAME=:memory: \
-          && python /ado/src/trytond/trytond/tests/run-tests.py'
-
-To run the demo-setup again, use::
-
-    $ docker-compose run tryton sh -c \
-          'ado-do pip-install tryton \
-          && python -m doctest -v etc/scenario_master_data.txt'
-
-
 Maintenance After c3s.ado Update
 --------------------------------
 Some changes in the container setup require a rebuild of the whole system.
@@ -384,7 +368,27 @@ To rebuild a new database use the following pattern::
 .. warning:: All data in this database will be deleted!
 
 Testing
--------
+=======
+
+Tryton
+------
+
+To run tests in the tryton container use::
+
+    $ docker-compose run tryton sh -c \
+          'ado-do pip-install tryton \
+          && export DB_NAME=:memory: \
+          && python /ado/src/trytond/trytond/tests/run-tests.py'
+
+To run the demo-setup again, use::
+
+    $ docker-compose run tryton sh -c \
+          'ado-do pip-install tryton \
+          && python -m doctest -v etc/scenario_master_data.txt'
+
+Portal
+------
+
 Create a database template, which will be copied and used for tests::
 
     $ docker-compose run portal ado-do create-test-db
