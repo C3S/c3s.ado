@@ -13,6 +13,7 @@ tryton:
     - ./ado:/ado
   ports:
     - "8000:8000"
+    - "8069:8069"
   links:
     - db
 
